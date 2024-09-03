@@ -1,0 +1,156 @@
+# Import Statements and Constants
+import requests
+import xml.etree.ElementTree as ET
+from datetime import datetime, timedelta
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+# Constants
+RSS_FEED_URL = "https://cyware.com/allnews/feed" #or any other provider
+EMAIL_FROM = "from address"
+EMAIL_TO = "to addres"
+EMAIL_SUBJECT = "Daily Cybersecurity News"
+SMTP_SERVER = "SMTP or Relay"
+SMTP_PORT = 25
+
+#  Fetch RSS Feed Function
+def fetch_rss_feed(url):
+    response = requests.get(url)
+    response.raise_for_status()
+    return response.content
+
+# Parse RSS Feed Function
+# Explanation:
+# This function parses the XML content of the RSS feed using xml.etree.ElementTree.
+# It navigates through the XML structure to find all news items (<item> tags) and extracts key details like the title, link, published date, description, and category.
+# Each news item is stored in a list as a dictionary.
+
+def parse_rss_feed(content):
+    root = ET.fromstring(content)
+    items = []
+    for item in root.findall('.//item'):
+        title = item.find('title').text
+        link = item.find('link').text
+        pubDate = item.find('pubDate').text
+        description = item.find('description').text
+        category = item.find('category').text
+        items.append({
+            'Title': title,
+            'Link': link,
+            'Published Date': pubDate,
+            'Description': description,
+            'Category': category
+        })
+    return items
+
+# Filter Recent Items Function
+# Explanation:
+# This function filters the news items to include only those published within the last specified number of days (default is 1 day).
+# It compares each item's published date with the current UTC time minus the specified cutoff period and returns only the recent items.
+
+def filter_recent_items(items, days=1):
+    filtered_items = []
+    now = datetime.utcnow()
+    cutoff = now - timedelta(days=days)
+    for item in items:
+        pub_date = datetime.strptime(item['Published Date'], '%d %b %Y %H:%M:%S +0000')
+        if pub_date > cutoff:
+            filtered_items.append(item)
+    return filtered_items
+
+# Generate Email Content Function
+# Explanation:
+# This function generates the HTML content for the email, styling it with CSS to create a professional layout.
+# The email includes a header, a description of the notification, and a table populated with the filtered news items.
+# The table displays the title, published date, link, description, and category of each news item, formatted for easy reading.
+
+def generate_email_content(items):
+    now = datetime.utcnow()
+    email_body = f"""
+    <html>
+    <head>
+        <style>
+            body {{ font-family: Arial, sans-serif; }}
+            .container {{ background-color: #ffffff; margin: 20px auto; padding: 20px; border: 1px solid #ddd; max-width: 15cm; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); border-radius: 10px; word-wrap: break-word; overflow-wrap: break-word; text-align: left; }}
+            img {{ width: 85px; height: 25px; }}
+            h2 {{ font-size: 14px; color: #86BC24; }}
+            hr {{ border: 1px solid #ddd; }}
+            p {{ font-size: 12px; }}
+            table {{ width: 100%; border-collapse: collapse; }}
+            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+            th {{ background-color: #f2f2f2; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h2>Cyber Security Notification</h2>
+            <p>In line with our steadfast commitment to ensuring you remain well-informed and prepared against potential cyber threats, please find today's edition of the Daily Cybersecurity News. This comprehensive update encompasses the latest headlines, expert analysis, and actionable insights designed to equip you with the knowledge necessary to navigate the continuously evolving cybersecurity landscape.</p>
+            <p><strong>Type:</strong> Cyber Security Notification | <strong>Issue Date:</strong> {now.strftime("%Y-%m-%d")} | <strong>TLP:</strong> Green</p>
+            <hr>
+            <h1>Cyber Security Notification</h1>
+            <div style="border: 1px solid #ddd; padding: 10px; word-wrap: break-word; overflow-wrap: break-word;">
+                <table>
+                    <tr>
+                        <th>Title</th>
+                        <th>Published Date</th>
+                        <th>Link</th>
+                        <th>Description</th>
+                        <th>Category</th>
+                    </tr>
+    """
+
+    for item in items:
+        email_body += f"""
+                    <tr>
+                        <td>{item['Title']}</td>
+                        <td>{item['Published Date']}</td>
+                        <td><a href='{item['Link']}'>Link</a></td>
+                        <td>{item['Description']}</td>
+                        <td>{item['Category']}</td>
+                    </tr>
+        """
+
+    email_body += """
+                </table>
+            </div>
+            <hr>
+            <h5 style="color: grey">CLASSIFICATION: DATA CLASSIFICATION </h5>
+        </div>
+    </body>
+    </html>
+    """
+
+    return email_body
+
+# Send Email Function
+# Explanation: 
+# This function sends the generated email using the specified SMTP server.
+# It creates an email message with the HTML content and sends it from the EMAIL_FROM address to the EMAIL_TO address.
+# The script does not use TLS encryption, as indicated by the commented-out starttls() line.
+
+def send_email(html_content):
+    msg = MIMEMultipart()
+    msg['From'] = EMAIL_FROM
+    msg['To'] = EMAIL_TO
+    msg['Subject'] = EMAIL_SUBJECT
+
+    msg.attach(MIMEText(html_content, 'html'))
+
+    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+        # server.starttls()  # TLS is disabled as per the requirement
+        server.sendmail(EMAIL_FROM, EMAIL_TO, msg.as_string())
+
+# Main Function
+
+def main():
+    try:
+        content = fetch_rss_feed(RSS_FEED_URL)
+        items = parse_rss_feed(content)
+        recent_items = filter_recent_items(items, days=1)
+        if recent_items:
+            html_content = generate_email_content(recent_items)
+            send_email(html_content)
+            print("Email sent successfully.")
+        else:
+            print("No recent news items")
